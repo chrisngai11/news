@@ -1,0 +1,42 @@
+name: Daily US Stock Report
+
+on:
+  schedule:
+    # 每天香港時間 09:00 (UTC 01:00)
+    - cron: '0 1 * * *'
+    # 每天香港時間 13:00 (UTC 05:00)
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '選擇測試模式 (morning 或 noon)'
+        required: true
+        default: 'morning'
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests yfinance feedparser
+
+      - name: Run script
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "0 5 * * *" ]; then
+            MODE="noon"
+          else
+            MODE="morning"
+          fi
+          python report.py "$MODE"

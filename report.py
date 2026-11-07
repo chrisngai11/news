@@ -1,10 +1,12 @@
 import os
 import sys
+import time
+from datetime import datetime, timezone
 import requests
 import yfinance as yf
 import feedparser
 
-# 監控標的定義
+# --- 市場數據定義 ---
 STOCK_INDICES = {
     "道瓊工業指數 (DJI)": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/%5EDJI"},
     "標普 500 指數 (S&P 500)": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/%5EGSPC"},
@@ -25,7 +27,6 @@ TREASURIES = {
 def format_market_data(title_header):
     lines = [f"## {title_header}\n"]
 
-    # 1. 四大指數
     lines.append("### 📈 美股四大指數")
     for name, info in STOCK_INDICES.items():
         try:
@@ -47,7 +48,6 @@ def format_market_data(title_header):
             lines.append(f"- **{name}：** 數據獲取異常 ({str(e)})")
     lines.append("")
 
-    # 2. 原油價格
     lines.append("### 🛢️ 國際原油期貨")
     for name, info in COMMODITIES.items():
         try:
@@ -69,7 +69,6 @@ def format_market_data(title_header):
             lines.append(f"- **{name}：** 數據獲取異常 ({str(e)})")
     lines.append("")
 
-    # 3. 美債長天期殖利率
     lines.append("### 🏛️ 美債長天期殖利率")
     for name, info in TREASURIES.items():
         try:
@@ -92,23 +91,42 @@ def format_market_data(title_header):
 
     return "\n".join(lines)
 
-def get_noon_report():
-    rss_feeds = [
-        ("CNBC 美國經濟與市場", "https://search.cnbc.com/rs/search/view.html?partnerId=2000&keywords=us%20economy&sort=date"),
-        ("Yahoo Finance 最新市場動態", "https://finance.yahoo.com/news/rssindex")
+def get_yahoo_2hr_news():
+    """抓取 Yahoo 最新新聞（涵蓋經濟、美股、政治、地緣/戰爭、民生），篩選過去 2.5 小時內發布的新聞"""
+    yahoo_feeds = [
+        "https://finance.yahoo.com/news/rssindex",                                    # 核心綜合財經與經濟
+        "https://news.yahoo.com/rss/politics",                                        # 美國政治與國會動態
+        "https://news.yahoo.com/rss/world",                                           # 國際地緣政治與戰爭
+        "https://search.cnbc.com/rs/search/view.html?partnerId=2000&keywords=economy&sort=date"  # 經濟與民生消費補助源
     ]
-    lines = ["## 🌍 【13:00 美股最新政經與地緣消息】\n"]
-    count, seen_titles = 0, set()
-    for _, url in rss_feeds:
+
+    now_ts = time.time()
+    two_and_half_hours_ago = now_ts - (2.5 * 3600)  # 只抓最近 2.5 小時內的新聞，防止重複洗版
+
+    lines = ["## ⚡ 【Yahoo 新聞 2小時即時快訊：經濟・股市・政治・地緣】\n"]
+    count = 0
+    seen_titles = set()
+
+    for url in yahoo_feeds:
         try:
             feed = feedparser.parse(url)
             for entry in feed.entries:
                 title = entry.get("title", "").strip()
                 link = entry.get("link", "").strip()
                 summary = entry.get("summary", "").strip()
+
+                # 檢查發布時間
+                pub_parsed = entry.get("published_parsed")
+                if pub_parsed:
+                    pub_ts = time.mktime(pub_parsed)
+                    if pub_ts < two_and_half_hours_ago:
+                        continue  # 超過 2.5 小時前的舊聞跳過
+
+                # 清理標籤
                 summary = summary.replace("<p>", "").replace("</p>", "").replace("<b>", "").replace("</b>", "")
-                if len(summary) > 120:
-                    summary = summary[:120] + "..."
+                if len(summary) > 130:
+                    summary = summary[:130] + "..."
+
                 if title and title not in seen_titles:
                     seen_titles.add(title)
                     count += 1
@@ -116,14 +134,18 @@ def get_noon_report():
                     if summary:
                         lines.append(f"> {summary}")
                     lines.append(f"🔗 [閱讀完整報導]({link})\n")
-                if count >= 8:
+
+                if count >= 6:  # 每次最多彙整 6 則最新快訊
                     break
         except Exception:
             continue
-        if count >= 8:
+        if count >= 6:
             break
+
     if count == 0:
-        lines.append("暫無最新新聞源更新，請稍後重試。")
+        print("過去 2 小時內無重大新聞更新，本次略過發送。")
+        return None  # 返回 None，不發送空訊息
+
     return "\n".join(lines)
 
 def split_message_for_discord(text, max_len=1900):
@@ -139,6 +161,8 @@ def split_message_for_discord(text, max_len=1900):
     return chunks
 
 def send_discord(message):
+    if not message:
+        return
     webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
     chunks = split_message_for_discord(message)
     for chunk in chunks:
@@ -147,11 +171,11 @@ def send_discord(message):
         resp.raise_for_status()
 
 if __name__ == "__main__":
-    mode = sys.argv[1] if len(sys.argv) > 1 else "morning"
+    mode = sys.argv[1] if len(sys.argv) > 1 else "news"
     if mode == "morning":
         content = format_market_data("📊 【09:00 美股昨日收盤、原油與美債利率總結】")
     elif mode == "intraday":
         content = format_market_data("⚡ 【美股開盤 1 小時盤中速報：四大指數、原油與利率變動】")
     else:
-        content = get_noon_report()
+        content = get_yahoo_2hr_news()
     send_discord(content)

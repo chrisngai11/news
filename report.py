@@ -5,13 +5,9 @@ import requests
 import yfinance as yf
 import feedparser
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 
 plt.style.use('dark_background')
 
-# ==========================================
-# 1. 監控資產標的設定
-# ==========================================
 STOCK_INDICES = {
     "道瓊工業 (DJI)": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/%5EDJI"},
     "標普 500 (GSPC)": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/%5EGSPC"},
@@ -29,26 +25,74 @@ TREASURIES = {
     "美債 30Y": {"ticker": "^TYX", "url": "https://finance.yahoo.com/quote/%5ETYX"}
 }
 
-# ==========================================
-# 2. matplotlib 自動繪圖模組
-# ==========================================
 def generate_trend_chart(image_path="trend.png"):
-    fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=False)
+    fig, axes = plt.subplots(3, 1, figsize=(10, 11))
     fig.patch.set_facecolor('#202225')
 
-    # 子圖 1：四大指數
+    # 1. 四大指數
     ax1 = axes[0]
     ax1.set_facecolor('#2f3136')
-    ax1.set_title("US Major Indices Performance (%)", fontsize=12, color='white', pad=10)
-    has_data1 = False
+    ax1.set_title("Major Indices (%)", color='white', fontsize=11)
+    has1 = False
     for name, info in STOCK_INDICES.items():
         try:
-            data = yf.download(info["ticker"], period="5d", interval="15m", progress=False)
-            if not data.empty and len(data) > 1:
-                close = data["Close"]
-                if hasattr(close, "iloc") and len(close.shape) > 1:
-                    close = close.iloc[:, 0]
-                base_val = float(close.dropna().iloc[0])
-                if base_val > 0:
-                    pct_change = ((close - base_val) / base_val) * 100
-                    ax1.plot(data.index, pct_change, label
+            df = yf.download(info["ticker"], period="5d", interval="15m", progress=False)
+            if not df.empty and len(df) > 1:
+                c = df["Close"]
+                if hasattr(c, "iloc") and len(c.shape) > 1:
+                    c = c.iloc[:, 0]
+                c_clean = c.dropna()
+                base = float(c_clean.iloc[0])
+                if base > 0:
+                    pct = ((c - base) / base) * 100
+                    ax1.plot(df.index, pct, label=name)
+                    has1 = True
+        except Exception:
+            pass
+    if has1:
+        ax1.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+        ax1.legend(loc="upper left", fontsize=8)
+    ax1.grid(True, linestyle=':', alpha=0.3)
+
+    # 2. 原油
+    ax2 = axes[1]
+    ax2.set_facecolor('#2f3136')
+    ax2.set_title("Crude Oil ($)", color='white', fontsize=11)
+    has2 = False
+    for name, info in COMMODITIES.items():
+        try:
+            df = yf.download(info["ticker"], period="5d", interval="15m", progress=False)
+            if not df.empty and len(df) > 1:
+                c = df["Close"]
+                if hasattr(c, "iloc") and len(c.shape) > 1:
+                    c = c.iloc[:, 0]
+                ax2.plot(df.index, c, label=name)
+                has2 = True
+        except Exception:
+            pass
+    if has2:
+        ax2.legend(loc="upper left", fontsize=8)
+    ax2.grid(True, linestyle=':', alpha=0.3)
+
+    # 3. 美債利率
+    ax3 = axes[2]
+    ax3.set_facecolor('#2f3136')
+    ax3.set_title("Treasury Yields (%)", color='white', fontsize=11)
+    has3 = False
+    for name, info in TREASURIES.items():
+        try:
+            df = yf.download(info["ticker"], period="5d", interval="15m", progress=False)
+            if not df.empty and len(df) > 1:
+                c = df["Close"]
+                if hasattr(c, "iloc") and len(c.shape) > 1:
+                    c = c.iloc[:, 0]
+                ax3.plot(df.index, c, label=name)
+                has3 = True
+        except Exception:
+            pass
+    if has3:
+        ax3.legend(loc="upper left", fontsize=8)
+    ax3.grid(True, linestyle=':', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=110, facecolor=fig.get

@@ -2,16 +2,24 @@ name: Daily US Stock Report
 
 on:
   schedule:
-    # 每天香港時間 09:00 (UTC 01:00)
+    # 1. 每 2 個小時整點執行一次（抓取 Yahoo 經濟/政治/戰爭/民生即時新聞）
+    - cron: '0 */2 * * *'
+
+    # 2. 每天早上 09:00 HKT (UTC 01:00) - 前日收盤完整報告
     - cron: '0 1 * * *'
-    # 每天香港時間 13:00 (UTC 05:00)
-    - cron: '0 5 * * *'
+
+    # 3. 冬令時間開盤 1 小時後：香港時間週一至週五 23:30 (UTC 15:30)
+    - cron: '30 15 * * 1-5'
+
+    # 4. 夏令時間開盤 1 小時後：香港時間週一至週五 22:30 (UTC 14:30)
+    - cron: '30 14 * * 1-5'
+
   workflow_dispatch:
     inputs:
       mode:
-        description: '選擇測試模式 (morning 或 noon)'
+        description: '選擇測試模式 (morning / intraday / news)'
         required: true
-        default: 'morning'
+        default: 'news'
 
 jobs:
   send-report:
@@ -34,9 +42,11 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             MODE="${{ github.event.inputs.mode }}"
-          elif [ "${{ github.event.schedule }}" = "0 5 * * *" ]; then
-            MODE="noon"
-          else
+          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
             MODE="morning"
+          elif [ "${{ github.event.schedule }}" = "30 15 * * 1-5" ] || [ "${{ github.event.schedule }}" = "30 14 * * 1-5" ]; then
+            MODE="intraday"
+          else
+            MODE="news"
           fi
           python report.py "$MODE"

@@ -1,52 +1,41 @@
-name: Daily US Stock Report
+import os
+import sys
+import time
+import requests
+import yfinance as yf
+import feedparser
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
-on:
-  schedule:
-    # 1. 每 2 個小時整點執行一次（抓取 Yahoo 經濟/政治/戰爭/民生即時新聞）
-    - cron: '0 */2 * * *'
+# 設定深色主題風格，適配 Discord 介面
+plt.style.use('dark_background')
 
-    # 2. 每天早上 09:00 HKT (UTC 01:00) - 前日收盤完整報告
-    - cron: '0 1 * * *'
+# ==========================================
+# 1. 監控資產標的設定
+# ==========================================
+STOCK_INDICES = {
+    "道瓊工業 (DJI)": {"ticker": "^DJI", "url": "https://finance.yahoo.com/quote/%5EDJI"},
+    "標普 500 (GSPC)": {"ticker": "^GSPC", "url": "https://finance.yahoo.com/quote/%5EGSPC"},
+    "納斯達克 (IXIC)": {"ticker": "^IXIC", "url": "https://finance.yahoo.com/quote/%5EIXIC"},
+    "費城半導體 (SOX)": {"ticker": "^SOX", "url": "https://finance.yahoo.com/quote/%5ESOX"}
+}
 
-    # 3. 冬令時間開盤 1 小時後：香港時間週一至週五 23:30 (UTC 15:30)
-    - cron: '30 15 * * 1-5'
+COMMODITIES = {
+    "WTI 原油": {"ticker": "CL=F", "url": "https://finance.yahoo.com/quote/CL=F"},
+    "布蘭特原油": {"ticker": "BZ=F", "url": "https://finance.yahoo.com/quote/BZ=F"}
+}
 
-    # 4. 夏令時間開盤 1 小時後：香港時間週一至週五 22:30 (UTC 14:30)
-    - cron: '30 14 * * 1-5'
+TREASURIES = {
+    "美債 10Y": {"ticker": "^TNX", "url": "https://finance.yahoo.com/quote/%5ETNX"},
+    "美債 30Y": {"ticker": "^TYX", "url": "https://finance.yahoo.com/quote/%5ETYX"}
+}
 
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: '選擇測試模式 (morning / intraday / news)'
-        required: true
-        default: 'news'
+# ==========================================
+# 2. matplotlib 自動繪製盤中走勢圖模組
+# ==========================================
+def generate_trend_chart(image_path="trend.png"):
+    """使用 matplotlib 繪製 3 個子圖：四大指數百分比走勢、原油價格、長天期美債殖利率"""
+    fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=False)
+    fig.patch.set_facecolor('#202225')  # 設定圖表外邊框為 Discord 灰色底色
 
-jobs:
-  send-report:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install requests yfinance feedparser
-
-      - name: Run script
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            MODE="${{ github.event.inputs.mode }}"
-          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
-            MODE="morning"
-          elif [ "${{ github.event.schedule }}" = "30 15 * * 1-5" ] || [ "${{ github.event.schedule }}" = "30 14 * * 1-5" ]; then
-            MODE="intraday"
-          else
-            MODE="news"
-          fi
-          python report.py "$MODE"
+    # 子
